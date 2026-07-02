@@ -1,8 +1,11 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import { OAuth2Client } from 'google-auth-library';
 import User from '../models/User.js';
 import ErrorResponse from '../utils/errorResponse.js';
 import { generateAccessToken, generateRefreshToken } from '../utils/generateTokens.js';
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // @desc    Register a new user
 // @route   POST /api/v1/auth/register
@@ -186,5 +189,78 @@ export const resetPassword = async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+};
+
+// @desc    Google OAuth login/register
+// @route   POST /api/v1/auth/google
+// @access  Public
+export const googleLogin = async (req, res, next) => {
+  const { credential } = req.body;
+
+  try {
+    if (!credential) {
+      return next(new ErrorResponse('Google credential is required', 400));
+    }
+
+    // Verify Google ID token
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID
+    });
+
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, picture } = payload;
+
+    if (!email) {
+      return next(new ErrorResponse('Google account does not have an email', 400));
+    }
+
+    // Check if user already exists with this googleId
+    let user = await User.findOne({ googleId });
+
+    if (!user) {
+      // Check if user exists with same email (registered via email/password)
+      user = await User.findOne({ email });
+
+      if (user) {
+        // Link Google account to existing email user
+        user.googleId = googleId;
+        if (!user.avatar && picture) {
+          user.avatar = picture;
+        }
+        await user.save();
+      } else {
+        // Create brand new user
+        user = await User.create({
+          name,
+          email,
+          googleId,
+          avatar: picture
+        });
+      }
+    }
+
+    if (user.status === 'blocked') {
+      return next(new ErrorResponse('Your account has been blocked', 403));
+    }
+
+    const accessToken = generateAccessToken(user._id);
+    generateRefreshToken(res, user._id);
+
+    res.status(200).json({
+      success: true,
+      accessToken,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        avatar: user.avatar
+      }
+    });
+  } catch (error) {
+    next(new ErrorResponse('Google authentication failed', 401));
   }
 };
