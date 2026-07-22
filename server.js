@@ -18,6 +18,7 @@ import cartRoutes from './routes/cartRoutes.js';
 import couponRoutes from './routes/couponRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import heroSlideRoutes from './routes/heroSlideRoutes.js';
+import sliderConfigRoutes from './routes/sliderConfigRoutes.js';
 
 dotenv.config();
 
@@ -65,6 +66,7 @@ app.use('/api/v1/cart', cartRoutes);
 app.use('/api/v1/coupons', couponRoutes);
 app.use('/api/v1/orders', orderRoutes);
 app.use('/api/v1/hero-slides', heroSlideRoutes);
+app.use('/api/v1/slider-config', sliderConfigRoutes);
 
 app.use(errorHandler);
 

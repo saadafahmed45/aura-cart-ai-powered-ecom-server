@@ -2,6 +2,19 @@ import Product from '../models/Product.js';
 import Category from '../models/Category.js';
 import ErrorResponse from '../utils/errorResponse.js';
 import { uploadToCloudinary } from '../middleware/uploadMiddleware.js';
+import mongoose from 'mongoose';
+
+// Slug generator helper
+const slugify = (text) => {
+  return text
+    .toString()
+    .toLowerCase()
+    .replace(/\s+/g, '-') // Replace spaces with -
+    .replace(/[^\w\-]+/g, '') // Remove all non-word chars
+    .replace(/\-\-+/g, '-') // Replace multiple - with single -
+    .replace(/^-+/, '') // Trim - from start
+    .replace(/-+$/, ''); // Trim - from end
+};
 
 // @desc    Get all products (with search, filter, sort, paginate)
 // @route   GET /api/v1/products
@@ -14,22 +27,26 @@ export const getProducts = async (req, res, next) => {
 
     const query = {};
 
-    // 1. Search
+    // 1. Search (Name, Brand, SKU)
     if (req.query.search) {
       query.$or = [
         { name: { $regex: req.query.search, $options: 'i' } },
-        { description: { $regex: req.query.search, $options: 'i' } }
+        { brand: { $regex: req.query.search, $options: 'i' } },
+        { 'variants.sku': { $regex: req.query.search, $options: 'i' } }
       ];
     }
 
     // 2. Category
     if (req.query.category) {
+      const isObjectId = mongoose.isValidObjectId(req.query.category);
       const categoryObj = await Category.findOne({
         $or: [
           { slug: req.query.category },
-          { name: req.query.category }
+          { name: req.query.category },
+          ...(isObjectId ? [{ _id: req.query.category }] : [])
         ]
       });
+
       if (categoryObj) {
         query.category = categoryObj._id;
       } else {
@@ -38,7 +55,8 @@ export const getProducts = async (req, res, next) => {
           products: [],
           page: 1,
           pages: 0,
-          total: 0
+          total: 0,
+          brands: []
         });
       }
     }
@@ -48,29 +66,49 @@ export const getProducts = async (req, res, next) => {
       query.brand = { $regex: req.query.brand, $options: 'i' };
     }
 
-    // 4. Price range
+    // 4. Status (Dashboard sees all, public shop sees only active)
+    if (req.query.dashboard === 'true') {
+      if (req.query.status) {
+        query.status = req.query.status;
+      }
+    } else {
+      query.status = 'active';
+    }
+
+    // 5. Featured / Best Seller / New Arrival
+    if (req.query.featured) {
+      query.featured = req.query.featured === 'true';
+    }
+    if (req.query.bestSeller) {
+      query.bestSeller = req.query.bestSeller === 'true';
+    }
+    if (req.query.newArrival) {
+      query.newArrival = req.query.newArrival === 'true';
+    }
+
+    // 6. Price range (based on denormalized lowestPrice)
     if (req.query.minPrice || req.query.maxPrice) {
-      query.price = {};
+      query.lowestPrice = {};
       if (req.query.minPrice) {
-        query.price.$gte = Number(req.query.minPrice);
+        query.lowestPrice.$gte = Number(req.query.minPrice);
       }
       if (req.query.maxPrice) {
-        query.price.$lte = Number(req.query.maxPrice);
+        query.lowestPrice.$lte = Number(req.query.maxPrice);
       }
     }
 
-    // 5. Rating
+    // 7. Rating
     if (req.query.rating) {
       query.ratings = { $gte: Number(req.query.rating) };
     }
 
-    // Sort order
+    // Sort order (based on denormalized lowestPrice)
     let sort = { createdAt: -1 };
     if (req.query.sort) {
       if (req.query.sort === 'priceAsc') {
-        sort = { price: 1 };
+        sort = { lowestPrice: 1 };
       } else if (req.query.sort === 'priceDesc') {
-        sort = { price: -1 };
+        sort = { lowestPrice: -1 };
       } else if (req.query.sort === 'rating') {
         sort = { ratings: -1 };
       } else if (req.query.sort === 'popular') {
@@ -85,7 +123,7 @@ export const getProducts = async (req, res, next) => {
       .skip(skip)
       .limit(limit);
 
-    const brands = await Product.distinct('brand');
+    const brands = await Product.distinct('brand', { status: 'active' });
 
     res.status(200).json({
       success: true,
@@ -132,6 +170,7 @@ export const getRelatedProducts = async (req, res, next) => {
 
     const related = await Product.find({
       category: product.category,
+      status: 'active',
       _id: { $ne: product._id }
     })
       .limit(4)
@@ -151,10 +190,20 @@ export const getRelatedProducts = async (req, res, next) => {
 // @access  Private/Admin
 export const createProduct = async (req, res, next) => {
   try {
-    const { name, description, price, discountPrice, category, brand, stock } = req.body;
+    const { 
+      name, 
+      brand, 
+      category, 
+      shortDescription, 
+      fullDescription,
+      status,
+      featured,
+      bestSeller,
+      newArrival
+    } = req.body;
 
-    if (!name || !description || !price || !category || !brand) {
-      return next(new ErrorResponse('Please provide all required fields', 400));
+    if (!name || !fullDescription || !category || !brand) {
+      return next(new ErrorResponse('Please provide all required basic fields', 400));
     }
 
     const categoryExists = await Category.findById(category);
@@ -162,6 +211,7 @@ export const createProduct = async (req, res, next) => {
       return next(new ErrorResponse('Invalid category ID', 400));
     }
 
+    // Image Uploads
     const imageUrls = [];
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
@@ -170,15 +220,39 @@ export const createProduct = async (req, res, next) => {
       }
     }
 
+    // Parsing nested properties sent as JSON strings
+    let variants = [];
+    if (req.body.variants) {
+      variants = typeof req.body.variants === 'string' ? JSON.parse(req.body.variants) : req.body.variants;
+    }
+
+    let fragrance = {};
+    if (req.body.fragrance) {
+      fragrance = typeof req.body.fragrance === 'string' ? JSON.parse(req.body.fragrance) : req.body.fragrance;
+    }
+
+    let performance = {};
+    if (req.body.performance) {
+      performance = typeof req.body.performance === 'string' ? JSON.parse(req.body.performance) : req.body.performance;
+    }
+
+    const slug = slugify(name) + '-' + Math.random().toString(36).substring(2, 6);
+
     const product = await Product.create({
       name,
-      description,
-      price: Number(price),
-      discountPrice: discountPrice ? Number(discountPrice) : 0,
-      category,
+      slug,
       brand,
-      stock: Number(stock) || 0,
-      images: imageUrls
+      category,
+      shortDescription,
+      fullDescription,
+      images: imageUrls,
+      status: status || 'active',
+      featured: featured === 'true' || featured === true,
+      bestSeller: bestSeller === 'true' || bestSeller === true,
+      newArrival: newArrival === 'true' || newArrival === true,
+      variants,
+      fragrance,
+      performance
     });
 
     res.status(201).json({
@@ -200,7 +274,18 @@ export const updateProduct = async (req, res, next) => {
       return next(new ErrorResponse('Product not found', 404));
     }
 
-    const { name, description, price, discountPrice, category, brand, stock, keepImages } = req.body;
+    const { 
+      name, 
+      brand, 
+      category, 
+      shortDescription, 
+      fullDescription,
+      status,
+      featured,
+      bestSeller,
+      newArrival,
+      keepImages 
+    } = req.body;
 
     if (category) {
       const categoryExists = await Category.findById(category);
@@ -210,13 +295,34 @@ export const updateProduct = async (req, res, next) => {
       product.category = category;
     }
 
-    product.name = name || product.name;
-    product.description = description || product.description;
-    product.price = price !== undefined ? Number(price) : product.price;
-    product.discountPrice = discountPrice !== undefined ? Number(discountPrice) : product.discountPrice;
+    if (name) {
+      product.name = name;
+      // update slug optionally or keep original. Let's keep original unless explicitly changed
+    }
+    
     product.brand = brand || product.brand;
-    product.stock = stock !== undefined ? Number(stock) : product.stock;
+    product.shortDescription = shortDescription !== undefined ? shortDescription : product.shortDescription;
+    product.fullDescription = fullDescription || product.fullDescription;
+    product.status = status || product.status;
+    
+    product.featured = featured === 'true' || featured === true;
+    product.bestSeller = bestSeller === 'true' || bestSeller === true;
+    product.newArrival = newArrival === 'true' || newArrival === true;
 
+    // Parsing nested properties
+    if (req.body.variants) {
+      product.variants = typeof req.body.variants === 'string' ? JSON.parse(req.body.variants) : req.body.variants;
+    }
+
+    if (req.body.fragrance) {
+      product.fragrance = typeof req.body.fragrance === 'string' ? JSON.parse(req.body.fragrance) : req.body.fragrance;
+    }
+
+    if (req.body.performance) {
+      product.performance = typeof req.body.performance === 'string' ? JSON.parse(req.body.performance) : req.body.performance;
+    }
+
+    // Images logic
     let updatedImages = [];
     if (keepImages) {
       const parsedKeep = typeof keepImages === 'string' ? JSON.parse(keepImages) : keepImages;
@@ -230,7 +336,7 @@ export const updateProduct = async (req, res, next) => {
       }
     }
 
-    if (updatedImages.length > 0 || (req.files && req.files.length > 0)) {
+    if (updatedImages.length > 0 || (req.files && req.files.length > 0) || keepImages !== undefined) {
       product.images = updatedImages;
     }
 

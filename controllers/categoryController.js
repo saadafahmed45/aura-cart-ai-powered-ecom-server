@@ -1,5 +1,6 @@
 import Category from '../models/Category.js';
 import ErrorResponse from '../utils/errorResponse.js';
+import { uploadToCloudinary } from '../middleware/uploadMiddleware.js';
 
 const slugify = (text) => {
   return text
@@ -43,7 +44,18 @@ export const createCategory = async (req, res, next) => {
       return next(new ErrorResponse('Category already exists', 400));
     }
 
-    const category = await Category.create({ name, slug, description });
+    let imageUrl = '';
+    if (req.file) {
+      imageUrl = await uploadToCloudinary(req.file.buffer);
+    }
+
+    const category = await Category.create({ 
+      name, 
+      slug, 
+      description, 
+      image: imageUrl 
+    });
+
     res.status(201).json({
       success: true,
       category
@@ -70,6 +82,10 @@ export const updateCategory = async (req, res, next) => {
     
     if (name) {
       category.slug = slugify(name);
+    }
+
+    if (req.file) {
+      category.image = await uploadToCloudinary(req.file.buffer);
     }
 
     const updatedCategory = await category.save();

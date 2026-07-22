@@ -30,11 +30,17 @@ export const createOrder = async (req, res, next) => {
         return next(new ErrorResponse(`Product not found: ${item.product}`, 404));
       }
 
-      if (product.stock < item.quantity) {
-        return next(new ErrorResponse(`Insufficient stock for ${product.name}. Available: ${product.stock}`, 400));
+      // Find size variant
+      const variant = product.variants.find(v => v.size === item.size && v.active);
+      if (!variant) {
+        return next(new ErrorResponse(`Variant of size ${item.size} not found or inactive for product: ${product.name}`, 404));
       }
 
-      const price = product.discountPrice > 0 ? product.discountPrice : product.price;
+      if (variant.stock < item.quantity) {
+        return next(new ErrorResponse(`Insufficient stock for ${product.name} (${item.size}). Available: ${variant.stock}`, 400));
+      }
+
+      const price = variant.salePrice > 0 && variant.salePrice < variant.price ? variant.salePrice : variant.price;
       subtotal += price * item.quantity;
 
       finalOrderItems.push({
@@ -42,10 +48,12 @@ export const createOrder = async (req, res, next) => {
         name: product.name,
         quantity: item.quantity,
         price,
-        image: product.images[0] || ''
+        image: variant.image || product.images[0] || '',
+        size: variant.size,
+        sku: variant.sku
       });
 
-      product.stock -= item.quantity;
+      variant.stock -= item.quantity;
       await product.save();
     }
 
