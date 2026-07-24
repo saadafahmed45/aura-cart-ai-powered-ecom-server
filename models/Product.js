@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
 
 const variantSchema = new mongoose.Schema({
-  size: { type: String, required: true }, // e.g. "30ml", "50ml", "100ml"
+  size: { type: String, required: true }, // e.g. "3ML", "5ML", "9ML", "15ML", "50ML", "100ML"
+  isDecant: { type: Boolean, default: false },
+  sprays: { type: String }, // e.g. "45+ SPRAYS", "75+ SPRAYS", "135+ SPRAYS", "225+ SPRAYS"
   price: { type: Number, required: true },
   salePrice: { type: Number, default: 0 },
   sku: { type: String, required: true },

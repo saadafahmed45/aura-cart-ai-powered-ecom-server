@@ -108,8 +108,12 @@ const seedDB = async () => {
         bestSeller: true,
         newArrival: false,
         variants: [
-          { size: '50ml', price: 90, salePrice: 75, sku: 'LL-SA-50', stock: 15, active: true },
-          { size: '100ml', price: 120, salePrice: 95, sku: 'LL-SA-100', stock: 25, active: true }
+          { size: '3ML DECANT', isDecant: true, sprays: '45+ SPRAYS', price: 15, salePrice: 12, sku: 'LL-SA-3', stock: 50, active: true },
+          { size: '5ML DECANT', isDecant: true, sprays: '75+ SPRAYS', price: 24, salePrice: 20, sku: 'LL-SA-5', stock: 50, active: true },
+          { size: '9ML DECANT', isDecant: true, sprays: '135+ SPRAYS', price: 38, salePrice: 32, sku: 'LL-SA-9', stock: 40, active: true },
+          { size: '15ML DECANT', isDecant: true, sprays: '225+ SPRAYS', price: 58, salePrice: 48, sku: 'LL-SA-15', stock: 30, active: true },
+          { size: '50ML FULL BOTTLE', isDecant: false, sprays: 'Full Bottle', price: 90, salePrice: 75, sku: 'LL-SA-50', stock: 15, active: true },
+          { size: '100ML FULL BOTTLE', isDecant: false, sprays: 'Full Bottle', price: 120, salePrice: 95, sku: 'LL-SA-100', stock: 25, active: true }
         ],
         fragrance: {
           fragranceFamily: 'Woody',
@@ -144,8 +148,12 @@ const seedDB = async () => {
         bestSeller: false,
         newArrival: true,
         variants: [
-          { size: '50ml', price: 110, salePrice: 95, sku: 'TF-LC-50', stock: 10, active: true },
-          { size: '100ml', price: 150, salePrice: 135, sku: 'TF-LC-100', stock: 12, active: true }
+          { size: '3ML DECANT', isDecant: true, sprays: '45+ SPRAYS', price: 18, salePrice: 15, sku: 'TF-LC-3', stock: 50, active: true },
+          { size: '5ML DECANT', isDecant: true, sprays: '75+ SPRAYS', price: 28, salePrice: 24, sku: 'TF-LC-5', stock: 50, active: true },
+          { size: '9ML DECANT', isDecant: true, sprays: '135+ SPRAYS', price: 44, salePrice: 38, sku: 'TF-LC-9', stock: 40, active: true },
+          { size: '15ML DECANT', isDecant: true, sprays: '225+ SPRAYS', price: 68, salePrice: 58, sku: 'TF-LC-15', stock: 30, active: true },
+          { size: '50ML FULL BOTTLE', isDecant: false, sprays: 'Full Bottle', price: 110, salePrice: 95, sku: 'TF-LC-50', stock: 10, active: true },
+          { size: '100ML FULL BOTTLE', isDecant: false, sprays: 'Full Bottle', price: 150, salePrice: 135, sku: 'TF-LC-100', stock: 12, active: true }
         ],
         fragrance: {
           fragranceFamily: 'Oriental Sweet',
