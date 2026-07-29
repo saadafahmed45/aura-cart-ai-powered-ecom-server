@@ -324,16 +324,56 @@ export const updateProduct = async (req, res, next) => {
 
     // Images logic
     let updatedImages = [];
-    if (keepImages) {
-      const parsedKeep = typeof keepImages === 'string' ? JSON.parse(keepImages) : keepImages;
-      updatedImages = Array.isArray(parsedKeep) ? parsedKeep : [parsedKeep];
+    if (keepImages !== undefined) {
+      if (typeof keepImages === 'string') {
+        try {
+          const parsed = JSON.parse(keepImages);
+          updatedImages = Array.isArray(parsed) ? parsed : [parsed];
+        } catch {
+          updatedImages = [keepImages];
+        }
+      } else if (Array.isArray(keepImages)) {
+        updatedImages = [...keepImages];
+      }
     }
 
+    const uploadedUrls = [];
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
         const url = await uploadToCloudinary(file.buffer);
-        updatedImages.push(url);
+        uploadedUrls.push(url);
       }
+    }
+
+    if (req.body.imageOrder) {
+      try {
+        const order = typeof req.body.imageOrder === 'string' ? JSON.parse(req.body.imageOrder) : req.body.imageOrder;
+        if (Array.isArray(order) && order.length > 0) {
+          const orderedImages = [];
+          let newFilePointer = 0;
+          order.forEach((item) => {
+            if ((item.type === 'existing' || item.isNew === false) && item.url) {
+              orderedImages.push(item.url);
+            } else if (item.type === 'file' || item.isNew === true) {
+              if (uploadedUrls[newFilePointer]) {
+                orderedImages.push(uploadedUrls[newFilePointer]);
+                newFilePointer++;
+              }
+            }
+          });
+          while (newFilePointer < uploadedUrls.length) {
+            orderedImages.push(uploadedUrls[newFilePointer]);
+            newFilePointer++;
+          }
+          if (orderedImages.length > 0) {
+            updatedImages = orderedImages;
+          }
+        }
+      } catch (err) {
+        updatedImages = [...updatedImages, ...uploadedUrls];
+      }
+    } else {
+      updatedImages = [...updatedImages, ...uploadedUrls];
     }
 
     if (updatedImages.length > 0 || (req.files && req.files.length > 0) || keepImages !== undefined) {
