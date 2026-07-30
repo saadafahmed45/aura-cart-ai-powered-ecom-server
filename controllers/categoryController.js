@@ -17,7 +17,7 @@ const slugify = (text) => {
 // @access  Public
 export const getCategories = async (req, res, next) => {
   try {
-    const categories = await Category.find({}).sort({ name: 1 });
+    const categories = await Category.find({}).sort({ order: 1, name: 1 });
     res.status(200).json({
       success: true,
       categories
@@ -49,11 +49,14 @@ export const createCategory = async (req, res, next) => {
       imageUrl = await uploadToCloudinary(req.file.buffer);
     }
 
+    const count = await Category.countDocuments();
+
     const category = await Category.create({ 
       name, 
       slug, 
       description, 
-      image: imageUrl 
+      image: imageUrl,
+      order: count
     });
 
     res.status(201).json({
@@ -92,6 +95,43 @@ export const updateCategory = async (req, res, next) => {
     res.status(200).json({
       success: true,
       category: updatedCategory
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Reorder categories (Admin only)
+// @route   PUT /api/v1/categories/reorder
+// @access  Private/Admin
+export const reorderCategories = async (req, res, next) => {
+  const { orders } = req.body;
+  try {
+    if (!orders || !Array.isArray(orders)) {
+      return next(new ErrorResponse('Please provide valid category orders', 400));
+    }
+
+    const bulkOps = orders.map((item, index) => {
+      const categoryId = typeof item === 'string' ? item : (item.id || item._id);
+      const orderVal = typeof item === 'object' && typeof item.order === 'number' ? item.order : index;
+      return {
+        updateOne: {
+          filter: { _id: categoryId },
+          update: { order: orderVal }
+        }
+      };
+    });
+
+    if (bulkOps.length > 0) {
+      await Category.bulkWrite(bulkOps);
+    }
+
+    const categories = await Category.find({}).sort({ order: 1, name: 1 });
+
+    res.status(200).json({
+      success: true,
+      message: 'Categories reordered successfully',
+      categories
     });
   } catch (error) {
     next(error);

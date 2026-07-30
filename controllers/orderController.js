@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import User from '../models/User.js';
@@ -5,6 +6,62 @@ import Category from '../models/Category.js';
 import Coupon from '../models/Coupon.js';
 import Cart from '../models/Cart.js';
 import ErrorResponse from '../utils/errorResponse.js';
+
+// @desc    Get all orders (Admin only)
+// @route   GET /api/v1/orders
+// @access  Private/Admin
+export const getOrders = async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const query = {};
+    if (req.query.status) {
+      query.orderStatus = req.query.status;
+    }
+
+    if (req.query.search) {
+      const search = req.query.search.trim().replace(/^#/, '');
+
+      const users = await User.find({
+        $or: [
+          { email: { $regex: search, $options: 'i' } },
+          { name: { $regex: search, $options: 'i' } }
+        ]
+      }).select('_id');
+
+      const userIds = users.map(u => u._id);
+
+      const searchConditions = [
+        { user: { $in: userIds } }
+      ];
+
+      if (mongoose.Types.ObjectId.isValid(search)) {
+        searchConditions.push({ _id: search });
+      }
+
+      query.$or = searchConditions;
+    }
+
+    const count = await Order.countDocuments(query);
+    const orders = await Order.find(query)
+      .populate('user', 'name email')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    res.status(200).json({
+      success: true,
+      orders,
+      page,
+      pages: Math.ceil(count / limit),
+      total: count
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 // @desc    Create new order
 // @route   POST /api/v1/orders
@@ -163,39 +220,6 @@ export const getOrderById = async (req, res, next) => {
 // ADMIN DASHBOARD CONTROLLERS
 // ==========================================
 
-// @desc    Get all orders (Admin only)
-// @route   GET /api/v1/orders
-// @access  Private/Admin
-export const getOrders = async (req, res, next) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-
-    const query = {};
-    if (req.query.status) {
-      query.orderStatus = req.query.status;
-    }
-
-    const count = await Order.countDocuments(query);
-    const orders = await Order.find(query)
-      .populate('user', 'name email')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    res.status(200).json({
-      success: true,
-      orders,
-      page,
-      pages: Math.ceil(count / limit),
-      total: count
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
 // @desc    Update order and/or payment status (Admin only)
 // @route   PUT /api/v1/orders/:id/status
 // @access  Private/Admin
@@ -334,6 +358,28 @@ export const getAnalyticsStats = async (req, res, next) => {
       monthlySales,
       categoryDistribution,
       statusDistribution
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Delete order (Admin only)
+// @route   DELETE /api/v1/orders/:id
+// @access  Private/Admin
+export const deleteOrder = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id);
+
+    if (!order) {
+      return next(new ErrorResponse('Order not found', 404));
+    }
+
+    await Order.findByIdAndDelete(req.params.id);
+
+    res.status(200).json({
+      success: true,
+      message: 'Order deleted successfully'
     });
   } catch (error) {
     next(error);
