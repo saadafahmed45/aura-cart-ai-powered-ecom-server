@@ -143,7 +143,15 @@ export const getProducts = async (req, res, next) => {
 // @access  Public
 export const getProductById = async (req, res, next) => {
   try {
-    const product = await Product.findById(req.params.id).populate('category', 'name slug');
+    const { id } = req.params;
+    let product;
+
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      product = await Product.findById(id).populate('category', 'name slug');
+    }
+    if (!product) {
+      product = await Product.findOne({ slug: id }).populate('category', 'name slug');
+    }
 
     if (!product) {
       return next(new ErrorResponse('Product not found', 404));
@@ -163,7 +171,16 @@ export const getProductById = async (req, res, next) => {
 // @access  Public
 export const getRelatedProducts = async (req, res, next) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const { id } = req.params;
+    let product;
+
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      product = await Product.findById(id);
+    }
+    if (!product) {
+      product = await Product.findOne({ slug: id });
+    }
+
     if (!product) {
       return next(new ErrorResponse('Product not found', 404));
     }

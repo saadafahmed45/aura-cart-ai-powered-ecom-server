@@ -1,13 +1,20 @@
 import Review from '../models/Review.js';
 import Product from '../models/Product.js';
 import ErrorResponse from '../utils/errorResponse.js';
+import mongoose from 'mongoose';
 
 // @desc    Get reviews for a product
 // @route   GET /api/v1/reviews/product/:productId
 // @access  Public
 export const getProductReviews = async (req, res, next) => {
   try {
-    const reviews = await Review.find({ product: req.params.productId, isApproved: true })
+    let targetProductId = req.params.productId;
+    if (!mongoose.Types.ObjectId.isValid(targetProductId)) {
+      const prod = await Product.findOne({ slug: targetProductId });
+      if (prod) targetProductId = prod._id;
+    }
+
+    const reviews = await Review.find({ product: targetProductId, isApproved: true })
       .populate('user', 'name')
       .sort({ createdAt: -1 });
 
@@ -25,11 +32,16 @@ export const getProductReviews = async (req, res, next) => {
 // @access  Private
 export const createProductReview = async (req, res, next) => {
   const { rating, comment } = req.body;
-  const productId = req.params.productId;
+  let productId = req.params.productId;
 
   try {
     if (!rating || !comment) {
       return next(new ErrorResponse('Please provide rating and comment', 400));
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      const prod = await Product.findOne({ slug: productId });
+      if (prod) productId = prod._id.toString();
     }
 
     const product = await Product.findById(productId);
